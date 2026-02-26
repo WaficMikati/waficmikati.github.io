@@ -1147,16 +1147,16 @@ function reducer(state, action) {
           nextSize.width === existing.width && nextSize.height === existing.height
             ? state.nodes
             : state.nodes.map((n) =>
-                n.id === nodeId
-                  ? {
-                      ...n,
-                      width: nextSize.width,
-                      height: nextSize.height,
-                      x: centerX - nextSize.width / 2,
-                      y: centerY - nextSize.height / 2,
-                    }
-                  : n
-              )
+              n.id === nodeId
+                ? {
+                  ...n,
+                  width: nextSize.width,
+                  height: nextSize.height,
+                  x: centerX - nextSize.width / 2,
+                  y: centerY - nextSize.height / 2,
+                }
+                : n
+            )
         return { ...state, nodes, labelEdit: { ...state.labelEdit, value: action.value } }
       }
     case "END_LABEL_EDIT":
@@ -1976,13 +1976,13 @@ export default function MermaidEditor() {
     const nodes = state.nodes.map((n) =>
       n.id === nodeId
         ? {
-            ...n,
-            label: nextLabel,
-            width: nextSize.width,
-            height: nextSize.height,
-            x: centerX - nextSize.width / 2,
-            y: centerY - nextSize.height / 2,
-          }
+          ...n,
+          label: nextLabel,
+          width: nextSize.width,
+          height: nextSize.height,
+          x: centerX - nextSize.width / 2,
+          y: centerY - nextSize.height / 2,
+        }
         : n
     )
     dispatch({ type: "APPLY_GRAPH", nodes, edges: state.edges, pushHistory: true })
@@ -2848,10 +2848,17 @@ export default function MermaidEditor() {
                 const chipX = clamp(desiredChipX, shapeInner.left, Math.max(shapeInner.left, shapeInner.right - chipWidth))
                 const chipY = node.y + node.height / 2 - labelHeight / 2 + labelYOffset
                 const iconCenterX = chipX + chipWidth / 2
-                const iconCenterY = Math.min(
-                  shapeInner.bottom - connectIconSize / 2,
-                  chipY + labelHeight + connectGap + connectIconSize / 2
-                )
+                const baseIconCenterY = chipY + labelHeight + connectGap + connectIconSize / 2
+                const iconVisualOffsetY = -4
+                const maxIconOverflowY = 6
+                const minIconCenterY = chipY + labelHeight + connectIconSize / 2
+                const maxIconCenterY = shapeEdges.bottom - connectIconSize / 2 + maxIconOverflowY
+                const iconCenterY = clamp(baseIconCenterY + iconVisualOffsetY, minIconCenterY, maxIconCenterY)
+                const connectHandleHitSize = Math.max(connectIconSize + 10, 22)
+                const connectBridgeTop = chipY + labelHeight
+                const connectBridgeBottom = iconCenterY + connectHandleHitSize / 2
+                const connectBridgeHeight = Math.max(0, connectBridgeBottom - connectBridgeTop)
+                const connectBridgeWidth = Math.max(connectHandleHitSize, chipWidth)
 
                 return (
                   <g
@@ -3007,8 +3014,31 @@ export default function MermaidEditor() {
 
                     {showConnectHandle && (
                       <g
-                        style={{ pointerEvents: "none" }}
+                        onPointerDown={(e) => {
+                          if (isEditing) return
+                          if (!isHovered && state.connecting?.from !== node.id) return
+                          startConnectIntent(e, node)
+                        }}
+                        style={{ cursor: isEditing ? "text" : "crosshair" }}
                       >
+                        {connectBridgeHeight > 0 && (
+                          <rect
+                            x={iconCenterX - connectBridgeWidth / 2}
+                            y={connectBridgeTop}
+                            width={connectBridgeWidth}
+                            height={connectBridgeHeight}
+                            rx={Math.min(8, connectBridgeHeight / 2)}
+                            fill="transparent"
+                          />
+                        )}
+                        <rect
+                          x={iconCenterX - connectHandleHitSize / 2}
+                          y={iconCenterY - connectHandleHitSize / 2}
+                          width={connectHandleHitSize}
+                          height={connectHandleHitSize}
+                          rx={connectHandleHitSize / 2}
+                          fill="transparent"
+                        />
                         <foreignObject
                           x={iconCenterX - connectIconSize / 2}
                           y={iconCenterY - connectIconSize / 2}
@@ -3437,4 +3467,3 @@ export default function MermaidEditor() {
     </div>
   )
 }
-
