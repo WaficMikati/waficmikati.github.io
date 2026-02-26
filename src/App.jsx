@@ -1278,6 +1278,7 @@ export default function MermaidEditor() {
   const labelInputRef = useRef(null)
   const edgeLabelInputRef = useRef(null)
   const edgeLabelDraftRef = useRef("")
+  const nodeLabelCommitLockRef = useRef(false)
   const edgeLabelCommitLockRef = useRef(false)
   const lastLabelEditNodeIdRef = useRef(null)
   const lastEdgeLabelEditIdRef = useRef(null)
@@ -1372,6 +1373,7 @@ export default function MermaidEditor() {
   useEffect(() => {
     if (state.labelEdit) return
     lastLabelEditNodeIdRef.current = null
+    nodeLabelCommitLockRef.current = false
   }, [state.labelEdit])
 
   useEffect(() => {
@@ -1948,16 +1950,24 @@ export default function MermaidEditor() {
   }, [])
 
   const commitLabelEdit = useCallback(() => {
-    if (!state.labelEdit) return
+    if (!state.labelEdit || nodeLabelCommitLockRef.current) return
+    nodeLabelCommitLockRef.current = true
+    const releaseCommitLock = () => {
+      window.setTimeout(() => {
+        nodeLabelCommitLockRef.current = false
+      }, 0)
+    }
     const { nodeId, value, initialCenterX, initialCenterY } = state.labelEdit
     const existing = state.nodes.find((n) => n.id === nodeId)
     if (!existing) {
       dispatch({ type: "END_LABEL_EDIT" })
+      releaseCommitLock()
       return
     }
     const nextLabel = value.trim() || existing.label || `Node ${nodeId}`
     if (nextLabel === existing.label) {
       dispatch({ type: "END_LABEL_EDIT" })
+      releaseCommitLock()
       return
     }
     const nextSize = getNodeSizeForLabel(nextLabel, existing.shape)
@@ -1977,9 +1987,11 @@ export default function MermaidEditor() {
     )
     dispatch({ type: "APPLY_GRAPH", nodes, edges: state.edges, pushHistory: true })
     dispatch({ type: "END_LABEL_EDIT" })
+    releaseCommitLock()
   }, [state.labelEdit, state.nodes, state.edges])
 
   const cancelLabelEdit = useCallback(() => {
+    nodeLabelCommitLockRef.current = false
     if (state.labelEdit) {
       const { nodeId, initialX, initialY, initialWidth, initialHeight } = state.labelEdit
       const node = state.nodes.find((n) => n.id === nodeId)
@@ -1992,6 +2004,21 @@ export default function MermaidEditor() {
     }
     dispatch({ type: "END_LABEL_EDIT" })
   }, [state.labelEdit, state.nodes, state.edges])
+
+  useEffect(() => {
+    if (!state.labelEdit) return
+    const onPointerDownCapture = (e) => {
+      const editorEl = labelInputRef.current
+      if (!editorEl) return
+      const target = e.target
+      if (target && editorEl.contains(target)) return
+      commitLabelEdit()
+    }
+    window.addEventListener("pointerdown", onPointerDownCapture, true)
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDownCapture, true)
+    }
+  }, [state.labelEdit, commitLabelEdit])
 
   const resetZoomAndCenter = useCallback(() => {
     const canvasEl = canvasRef.current
