@@ -8,6 +8,7 @@ Visual flowchart builder with real-time Mermaid code synchronization.
   <img alt="React 19" src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" />
   <img alt="Vite 7" src="https://img.shields.io/badge/Vite-7-7C3AED?logo=vite&logoColor=white" />
   <img alt="Node" src="https://img.shields.io/badge/Node-20%2B-339933?logo=node.js&logoColor=white" />
+  <a href="https://github.com/WaficMikati"><img alt="Creator: Wafic Mikati" src="https://img.shields.io/badge/Creator-Wafic%20Mikati-0f172a?logo=github&logoColor=white" /></a>
 </p>
 
 </div>
@@ -17,6 +18,7 @@ Visual flowchart builder with real-time Mermaid code synchronization.
 This app lets you build flowcharts visually on a grid canvas while keeping Mermaid code editable and synchronized.
 
 It supports drag-and-drop creation, inline editing, connection labeling, multi-selection, code apply/cancel flows, and PNG export.
+
 
 ## Visual Architecture
 
