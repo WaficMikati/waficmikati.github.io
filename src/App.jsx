@@ -25,7 +25,7 @@ const DELETE_TAB_HEIGHT = 26
 const LABEL_WRAP_CHAR_LIMIT = 18
 const NODE_LABEL_FONT_SIZE = 14
 const NODE_LABEL_LINE_HEIGHT = 16
-const NODE_LABEL_CHAR_WIDTH = 7
+const NODE_LABEL_CHAR_WIDTH = 8
 const NODE_LABEL_PAD_X = 6
 const NODE_LABEL_BOX_VERTICAL_PAD = 8
 const NODE_CONNECT_ICON_SIZE = 14
@@ -59,16 +59,105 @@ const getShapeSize = (shape) => {
   if (shape === "circle") return { width: CIRCLE_NODE_SIZE, height: CIRCLE_NODE_SIZE }
   return { width: NODE_WIDTH, height: NODE_HEIGHT }
 }
+const indexToAlphaId = (index) => {
+  let n = Math.max(1, Number(index) || 1)
+  let out = ""
+  while (n > 0) {
+    n -= 1
+    out = String.fromCharCode(65 + (n % 26)) + out
+    n = Math.floor(n / 26)
+  }
+  return out
+}
 const getNextAvailableNodeId = (nodes) => {
-  const used = new Set(
-    nodes
-      .map((n) => n.id)
-      .filter((id) => /^[1-9]\d*$/.test(id))
-      .map((id) => Number.parseInt(id, 10))
-  )
+  const used = new Set(nodes.map((n) => String(n.id)))
   let next = 1
-  while (used.has(next)) next += 1
-  return next
+  while (used.has(indexToAlphaId(next))) next += 1
+  return indexToAlphaId(next)
+}
+const normalizeMermaidLabel = (label) => String(label ?? "")
+const autoLayoutByDirection = (nodes, edges, direction) => {
+  if (!nodes.length) return nodes
+  const dir = String(direction || "TD").toUpperCase()
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const indegree = new Map(nodes.map((n) => [n.id, 0]))
+  const children = new Map(nodes.map((n) => [n.id, []]))
+
+  for (const e of edges) {
+    if (!byId.has(e.from) || !byId.has(e.to)) continue
+    indegree.set(e.to, (indegree.get(e.to) || 0) + 1)
+    children.get(e.from).push(e.to)
+  }
+
+  const queue = []
+  for (const n of nodes) {
+    if ((indegree.get(n.id) || 0) === 0) queue.push(n.id)
+  }
+  if (!queue.length && nodes[0]) queue.push(nodes[0].id)
+
+  const levelById = new Map()
+  for (const id of queue) levelById.set(id, 0)
+
+  const processed = new Set()
+  while (queue.length) {
+    const id = queue.shift()
+    if (processed.has(id)) continue
+    processed.add(id)
+    const curLevel = levelById.get(id) || 0
+    for (const childId of children.get(id) || []) {
+      const nextLevel = curLevel + 1
+      if (!levelById.has(childId) || nextLevel > levelById.get(childId)) {
+        levelById.set(childId, nextLevel)
+      }
+      const nextIn = (indegree.get(childId) || 0) - 1
+      indegree.set(childId, nextIn)
+      if (nextIn === 0) queue.push(childId)
+    }
+  }
+
+  for (const n of nodes) {
+    if (!levelById.has(n.id)) levelById.set(n.id, 0)
+  }
+
+  const groups = new Map()
+  for (const n of nodes) {
+    const lv = levelById.get(n.id) || 0
+    if (!groups.has(lv)) groups.set(lv, [])
+    groups.get(lv).push(n)
+  }
+
+  const levels = Array.from(groups.keys()).sort((a, b) => a - b)
+  const maxLevel = levels.length ? levels[levels.length - 1] : 0
+  const majorGap = 180
+  const minorGap = 220
+  const originX = 140
+  const originY = 120
+
+  return nodes.map((n) => {
+    const rawLevel = levelById.get(n.id) || 0
+    const level = dir === "BT" || dir === "RL" ? maxLevel - rawLevel : rawLevel
+    const row = groups.get(rawLevel) || [n]
+    const idx = row.findIndex((r) => r.id === n.id)
+    const count = row.length
+    const offset = idx - (count - 1) / 2
+
+    let centerX = 0
+    let centerY = 0
+
+    if (dir === "LR" || dir === "RL") {
+      centerX = snapToGrid(originX + level * majorGap)
+      centerY = snapToGrid(originY + offset * minorGap)
+    } else {
+      centerX = snapToGrid(originX + offset * minorGap)
+      centerY = snapToGrid(originY + level * majorGap)
+    }
+
+    return {
+      ...n,
+      x: centerX - n.width / 2,
+      y: centerY - n.height / 2,
+    }
+  })
 }
 const getWrappedLineCount = (label, maxCharsPerLine = LABEL_WRAP_CHAR_LIMIT) => {
   const text = String(label ?? "")
@@ -243,24 +332,47 @@ function inferFlowDirection(nodes, edges) {
   return "TD"
 }
 
-function generateMermaidCode(nodes, edges) {
-  const direction = inferFlowDirection(nodes, edges)
+function generateMermaidCode(nodes, edges, directionOverride) {
+  const direction = directionOverride || inferFlowDirection(nodes, edges)
   let code = `flowchart ${direction}\n`
+  const escapeQuotedLabel = (value) =>
+    String(value ?? "")
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, "<br/>")
+  const escapeEdgeLabel = (value) =>
+    String(value ?? "")
+      .replace(/\n/g, " ")
+      .replace(/\|/g, "&#124;")
   const shapeText = {
-    rectangle: (label) => `[${label}]`,
-    rounded: (label) => `(${label})`,
-    diamond: (label) => `{${label}}`,
-    circle: (label) => `((${label}))`,
-    stadium: (label) => `([${label}])`,
+    rectangle: (label) => `["${label}"]`,
+    rounded: (label) => `("${label}")`,
+    diamond: (label) => `{"${label}"}`,
+    circle: (label) => `(("${label}"))`,
+    stadium: (label) => `(["${label}"])`,
+  }
+  const nodeToken = (node) => {
+    const mk = shapeText[node.shape] || shapeText.rectangle
+    return `${node.id}${mk(escapeQuotedLabel(node.label))}`
+  }
+  const nodeById = new Map(nodes.map((n) => [n.id, n]))
+  const connectedIds = new Set()
+
+  for (const edge of edges) {
+    connectedIds.add(edge.from)
+    connectedIds.add(edge.to)
+    const fromNode = nodeById.get(edge.from)
+    const toNode = nodeById.get(edge.to)
+    const fromToken = fromNode ? nodeToken(fromNode) : edge.from
+    const toToken = toNode ? nodeToken(toNode) : edge.to
+    const arrow = edge.label ? `-->|${escapeEdgeLabel(edge.label)}|` : "-->"
+    code += `    ${fromToken} ${arrow} ${toToken}\n`
   }
 
+  // Keep disconnected nodes in the generated code.
   for (const node of nodes) {
-    const mk = shapeText[node.shape] || shapeText.rectangle
-    code += `    ${node.id}${mk(node.label)}\n`
-  }
-  for (const edge of edges) {
-    const arrow = edge.label ? `-->|${edge.label}|` : "-->"
-    code += `    ${edge.from} ${arrow} ${edge.to}\n`
+    if (connectedIds.has(node.id)) continue
+    code += `    ${nodeToken(node)}\n`
   }
   return code
 }
@@ -273,15 +385,49 @@ function generateMermaidCode(nodes, edges) {
  */
 function parseMermaidCode(code) {
   try {
+    const directionMatch = code.match(/^\s*flowchart\s+([A-Za-z]{2})/im)
+    const parsedDirection = directionMatch ? directionMatch[1].toUpperCase() : "TD"
     const lines = code
       .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l && !l.toLowerCase().startsWith("flowchart"))
+      .map((raw, idx) => ({ raw, trimmed: raw.trim(), lineNo: idx + 1 }))
+      .filter((l) => l.trimmed && !l.trimmed.toLowerCase().startsWith("flowchart"))
 
     const nodes = []
     const edges = []
-    let maxId = 0
     let maxEdgeId = 0
+    const modernShapeMap = {
+      rect: "rectangle",
+      rounded: "rounded",
+      diam: "diamond",
+      diamond: "diamond",
+      circle: "circle",
+      stadium: "stadium",
+    }
+    const unescapeAttrValue = (value) =>
+      String(value ?? "")
+        .replace(/\\n/g, "\n")
+        .replace(/\\"/g, "\"")
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, "\\")
+    const decodeMermaidLabel = (value) =>
+      String(value ?? "")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/&#124;/g, "|")
+        .replace(/&quot;/g, "\"")
+        .replace(/&apos;/g, "'")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+    const unquoteLabel = (value) => {
+      const raw = String(value ?? "").trim()
+      if (
+        (raw.startsWith("\"") && raw.endsWith("\"")) ||
+        (raw.startsWith("'") && raw.endsWith("'"))
+      ) {
+        return raw.slice(1, -1)
+      }
+      return raw
+    }
 
     const parseNodeToken = (token) => {
       const m = String(token)
@@ -312,16 +458,41 @@ function parseMermaidCode(code) {
         .replace(/^\[\s*/, "")
         .replace(/\s*\]$/, "")
 
+      return { id, shape, label: normalizeMermaidLabel(decodeMermaidLabel(unquoteLabel(label))) }
+    }
+
+    const parseModernNodeToken = (token) => {
+      const m = String(token)
+        .trim()
+        .match(/^([A-Za-z0-9_-]+)\s*@\{\s*(.+)\s*\}\s*$/)
+      if (!m) return null
+
+      const id = m[1]
+      const attrsStr = m[2]
+      const attrs = {}
+      const attrRegex =
+        /([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,]+)\s*(?:,|$)/g
+      let match
+      while ((match = attrRegex.exec(attrsStr)) !== null) {
+        const key = match[1].toLowerCase()
+        let raw = match[2].trim()
+        if (
+          (raw.startsWith("\"") && raw.endsWith("\"")) ||
+          (raw.startsWith("'") && raw.endsWith("'"))
+        ) {
+          raw = raw.slice(1, -1)
+        }
+        attrs[key] = unescapeAttrValue(raw)
+      }
+
+      const shapeKey = String(attrs.shape || "rect").toLowerCase()
+      const shape = modernShapeMap[shapeKey] || "rectangle"
+      const label = attrs.label != null ? normalizeMermaidLabel(decodeMermaidLabel(String(attrs.label))) : id
       return { id, shape, label }
     }
 
-    const upsertNodeFromToken = (token) => {
-      const parsed = parseNodeToken(token)
+    const upsertParsedNode = (parsed) => {
       if (!parsed) return null
-
-      const numId = Number.parseInt(parsed.id, 10)
-      if (Number.isFinite(numId)) maxId = Math.max(maxId, numId)
-
       const existing = nodes.find((n) => n.id === parsed.id)
       if (existing) {
         if (parsed.shape) {
@@ -335,7 +506,7 @@ function parseMermaidCode(code) {
       }
 
       const shape = parsed.shape || "rectangle"
-      const label = parsed.label != null ? parsed.label : parsed.id
+      const label = parsed.label != null ? normalizeMermaidLabel(parsed.label) : parsed.id
       const { width, height } = getShapeSize(shape)
       nodes.push({
         id: parsed.id,
@@ -347,6 +518,13 @@ function parseMermaidCode(code) {
         height,
       })
       return parsed.id
+    }
+
+    const upsertNodeFromToken = (token) => {
+      const modernParsed = parseModernNodeToken(token)
+      if (modernParsed) return upsertParsedNode(modernParsed)
+      const parsed = parseNodeToken(token)
+      return upsertParsedNode(parsed)
     }
 
     const addNodeIfMissing = (id) => {
@@ -363,8 +541,11 @@ function parseMermaidCode(code) {
       })
     }
 
+    const handled = new Set()
+
     // Edges first
-    for (const line of lines) {
+    for (const lineInfo of lines) {
+      const line = lineInfo.trimmed
       const m = line.match(/^(.+?)\s*-->\s*(?:\|([^|]+)\|\s*)?(.+?)\s*$/)
       if (!m) continue
       const [, fromToken, label = "", toToken] = m
@@ -372,31 +553,54 @@ function parseMermaidCode(code) {
       const to = upsertNodeFromToken(toToken)
       if (!from || !to) continue
       maxEdgeId += 1
-      edges.push({ id: `e${maxEdgeId}`, from, to, label: label.trim(), type: "arrow" })
+      edges.push({
+        id: `e${maxEdgeId}`,
+        from,
+        to,
+        label: decodeMermaidLabel(label.trim()),
+        type: "arrow",
+      })
       addNodeIfMissing(from)
       addNodeIfMissing(to)
+      handled.add(lineInfo.lineNo)
     }
 
     // Nodes
-    for (const line of lines) {
+    for (const lineInfo of lines) {
+      const line = lineInfo.trimmed
+      const modern = parseModernNodeToken(line)
+      if (modern) {
+        upsertParsedNode(modern)
+        handled.add(lineInfo.lineNo)
+        continue
+      }
       const nm = line.match(/^([A-Za-z0-9_-]+)\s*(\(\(.*\)\)|\(\[.*\]\)|\(.+\)|\{.+\}|\[.+\])\s*$/)
       if (!nm) continue
       upsertNodeFromToken(line)
+      handled.add(lineInfo.lineNo)
+    }
+
+    const ignorable = /^(%%|subgraph\b|end\b|classDef\b|class\b|style\b|linkStyle\b|click\b|direction\b)/i
+    const unsupported = lines
+      .filter((l) => !handled.has(l.lineNo) && !ignorable.test(l.trimmed))
+      .map((l) => `${l.lineNo}: ${l.trimmed}`)
+
+    if (unsupported.length) {
+      return {
+        ok: false,
+        error: `Unsupported Mermaid syntax in line(s):\n${unsupported.join("\n")}`,
+      }
     }
 
     if (nodes.length === 0) return { ok: false, error: "No nodes found." }
-
-    let derivedMaxId = maxId
-    for (const n of nodes) {
-      const v = Number.parseInt(n.id, 10)
-      if (Number.isFinite(v)) derivedMaxId = Math.max(derivedMaxId, v)
-    }
+    const laidOutNodes = autoLayoutByDirection(nodes, edges, parsedDirection)
 
     return {
       ok: true,
-      nodes,
+      nodes: laidOutNodes,
       edges,
-      nextNodeId: derivedMaxId + 1,
+      flowDirection: parsedDirection,
+      nextNodeId: getNextAvailableNodeId(laidOutNodes),
       nextEdgeId: maxEdgeId + 1,
     }
   } catch (e) {
@@ -409,6 +613,37 @@ function getNodeCenter(nodes, nodeId) {
   const node = nodes.find((n) => n.id === nodeId)
   if (!node) return { x: 0, y: 0 }
   return { x: node.x + node.width / 2, y: node.y + node.height / 2 }
+}
+function getNodeConnectionPoint(node, toward, outward = 0) {
+  if (!node) return { x: toward?.x ?? 0, y: toward?.y ?? 0 }
+  const cx = node.x + node.width / 2
+  const cy = node.y + node.height / 2
+  const vx = (toward?.x ?? cx) - cx
+  const vy = (toward?.y ?? cy) - cy
+  const len = Math.hypot(vx, vy) || 1
+  const ux = vx / len
+  const uy = vy / len
+
+  let t = 1
+  if (node.shape === "circle") {
+    const r = node.width / 2.5
+    t = r / len
+  } else if (node.shape === "diamond") {
+    const hw = node.width / 2
+    const hh = node.height / 2
+    const denom = Math.abs(vx) / hw + Math.abs(vy) / hh
+    t = denom > 0 ? 1 / denom : 0
+  } else {
+    const hw = node.width / 2
+    const hh = node.height / 2
+    const denom = Math.max(Math.abs(vx) / hw, Math.abs(vy) / hh)
+    t = denom > 0 ? 1 / denom : 0
+  }
+
+  return {
+    x: cx + vx * t + ux * outward,
+    y: cy + vy * t + uy * outward,
+  }
 }
 
 function rectFromPoints(a, b) {
@@ -493,7 +728,7 @@ function buildExportSvgString({ nodes, edges, background = "white" }) {
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;")
+      .replace(/"/g, "&quot;")
       .replace(/'/g, "&apos;")
 
   const nodeSvg = nodes
@@ -508,22 +743,22 @@ function buildExportSvgString({ nodes, edges, background = "white" }) {
         const points = `${node.x + node.width / 2},${node.y} ${node.x + node.width},${node.y +
           node.height / 2} ${node.x + node.width / 2},${node.y + node.height} ${node.x},${node.y +
           node.height / 2}`
-        shapeEl = `<polygon points=\"${points}\" fill=\"${fill}\" stroke=\"${stroke}\" stroke-width=\"2\" />`
+        shapeEl = `<polygon points="${points}" fill="${fill}" stroke="${stroke}" stroke-width="2" />`
       } else if (node.shape === "circle") {
         const cx = node.x + node.width / 2
         const cy = node.y + node.height / 2
         const r = node.width / 2.5
-        shapeEl = `<circle cx=\"${cx}\" cy=\"${cy}\" r=\"${r}\" fill=\"${fill}\" stroke=\"${stroke}\" stroke-width=\"2\" />`
+        shapeEl = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2" />`
       } else if (node.shape === "stadium") {
-        shapeEl = `<rect x=\"${node.x}\" y=\"${node.y}\" width=\"${node.width}\" height=\"${node.height}\" rx=\"${node.height /
-          2}\" fill=\"${fill}\" stroke=\"${stroke}\" stroke-width=\"2\" />`
+        shapeEl = `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${node.height /
+          2}" fill="${fill}" stroke="${stroke}" stroke-width="2" />`
       } else if (node.shape === "rounded") {
-        shapeEl = `<rect x=\"${node.x}\" y=\"${node.y}\" width=\"${node.width}\" height=\"${node.height}\" rx=\"${ROUNDED_RADIUS}\" fill=\"${fill}\" stroke=\"${stroke}\" stroke-width=\"2\" />`
+        shapeEl = `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${ROUNDED_RADIUS}" fill="${fill}" stroke="${stroke}" stroke-width="2" />`
       } else {
-        shapeEl = `<rect x=\"${node.x}\" y=\"${node.y}\" width=\"${node.width}\" height=\"${node.height}\" fill=\"${fill}\" stroke=\"${stroke}\" stroke-width=\"2\" />`
+        shapeEl = `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" fill="${fill}" stroke="${stroke}" stroke-width="2" />`
       }
 
-      const textEl = `<text x=\"${labelX}\" y=\"${labelY}\" text-anchor=\"middle\" dominant-baseline=\"middle\" fill=\"#0f172a\" font-size=\"${NODE_LABEL_FONT_SIZE}\" font-weight=\"500\" font-family=\"Segoe UI, system-ui, sans-serif\">${escapeXml(
+      const textEl = `<text x="${labelX}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="#0f172a" font-size="${NODE_LABEL_FONT_SIZE}" font-weight="500" font-family="Segoe UI, system-ui, sans-serif">${escapeXml(
         node.label
       )}</text>`
 
@@ -533,32 +768,38 @@ function buildExportSvgString({ nodes, edges, background = "white" }) {
 
   const edgeSvg = edges
     .map((edge) => {
-      const from = getNodeCenter(nodes, edge.from)
-      const to = getNodeCenter(nodes, edge.to)
+      const fromNode = nodes.find((n) => n.id === edge.from)
+      const toNode = nodes.find((n) => n.id === edge.to)
+      const fromCenter = getNodeCenter(nodes, edge.from)
+      const toCenter = getNodeCenter(nodes, edge.to)
+      const from = fromNode ? getNodeConnectionPoint(fromNode, toCenter, 2) : fromCenter
+      const to = toNode ? getNodeConnectionPoint(toNode, fromCenter, 6) : toCenter
       const stroke = "#64748b"
 
-      const line = `<line x1=\"${from.x}\" y1=\"${from.y}\" x2=\"${to.x}\" y2=\"${to.y}\" stroke=\"${stroke}\" stroke-width=\"2\" marker-end=\"url(#${markerId})\" />`
+      const line = `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${stroke}" stroke-width="2" marker-end="url(#${markerId})" />`
 
       if (!edge.label) return line
 
       const tx = (from.x + to.x) / 2
-      const ty = (from.y + to.y) / 2 - 5
-      const text = `<text x=\"${tx}\" y=\"${ty}\" text-anchor=\"middle\" fill=\"#334155\" font-size=\"12\" font-weight=\"500\" font-family=\"Segoe UI, system-ui, sans-serif\">${escapeXml(
-        edge.label
-      )}</text>`
+      const ty = (from.y + to.y) / 2
+      const label = escapeXml(edge.label)
+      const labelWidth = Math.max(18, String(edge.label).length * 7 + 10)
+      const labelHeight = 18
+      const bg = `<rect x="${tx - labelWidth / 2}" y="${ty - labelHeight / 2}" width="${labelWidth}" height="${labelHeight}" rx="4" fill="white" />`
+      const text = `<text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="middle" fill="#334155" font-size="12" font-weight="500" font-family="Segoe UI, system-ui, sans-serif">${label}</text>`
 
-      return `${line}${text}`
+      return `${line}${bg}${text}`
     })
     .join("")
 
-  return `<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${w}\" height=\"${h}\" viewBox=\"${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}\">
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}">
   <defs>
-    <marker id=\"${markerId}\" markerWidth=\"10\" markerHeight=\"10\" refX=\"9\" refY=\"3\" orient=\"auto\" markerUnits=\"strokeWidth\">
-      <path d=\"M0,0 L0,6 L9,3 z\" fill=\"#64748b\" />
+    <marker id="${markerId}" markerWidth="12" markerHeight="12" refX="10" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
     </marker>
   </defs>
-  <rect x=\"${bounds.minX}\" y=\"${bounds.minY}\" width=\"${bounds.width}\" height=\"${bounds.height}\" fill=\"${background}\" />
+  <rect x="${bounds.minX}" y="${bounds.minY}" width="${bounds.width}" height="${bounds.height}" fill="${background}" />
   ${edgeSvg}
   ${nodeSvg}
 </svg>`
@@ -571,7 +812,7 @@ const initialStartPos = snapNodeTopLeftToCenterGrid(100, 100, initialRoundedSize
 const initialProcessPos = snapNodeTopLeftToCenterGrid(100, 220, initialRectangleSize.width, initialRectangleSize.height)
 const initialNodes = [
   {
-    id: "1",
+    id: "A",
     x: initialStartPos.x,
     y: initialStartPos.y,
     label: "Start",
@@ -580,7 +821,7 @@ const initialNodes = [
     height: initialRoundedSize.height,
   },
   {
-    id: "2",
+    id: "B",
     x: initialProcessPos.x,
     y: initialProcessPos.y,
     label: "Process",
@@ -589,11 +830,12 @@ const initialNodes = [
     height: initialRectangleSize.height,
   },
 ]
-const initialEdges = [{ id: "e1", from: "1", to: "2", label: "", type: "arrow" }]
+const initialEdges = [{ id: "e1", from: "A", to: "B", label: "", type: "arrow" }]
 
 const initialState = {
   nodes: initialNodes,
   edges: initialEdges,
+  flowDirection: "TD",
 
   // Selection
   selectedNodes: [],
@@ -620,15 +862,15 @@ const initialState = {
   zoom: 1,
 
   // History
-  history: [{ nodes: initialNodes, edges: initialEdges }],
+  history: [{ nodes: initialNodes, edges: initialEdges, flowDirection: "TD" }],
   historyIndex: 0,
 
   // Code
-  mermaidCode: generateMermaidCode(initialNodes, initialEdges),
+  mermaidCode: generateMermaidCode(initialNodes, initialEdges, "TD"),
   codeEditMode: false,
 
   // IDs
-  nextNodeId: 3,
+  nextNodeId: getNextAvailableNodeId(initialNodes),
   nextEdgeId: 2,
 
   // Right panel
@@ -674,7 +916,11 @@ function reducer(state, action) {
     case "DRAG_START":
       return { ...state, dragging: action.dragging }
     case "DRAG_MOVE":
-      return { ...state, nodes: action.nodes }
+      return {
+        ...state,
+        nodes: action.nodes,
+        flowDirection: inferFlowDirection(action.nodes, state.edges),
+      }
     case "DRAG_END":
       return { ...state, dragging: null }
 
@@ -746,11 +992,13 @@ function reducer(state, action) {
       return { ...state, labelEdit: null }
 
     case "APPLY_GRAPH": {
-      const { nodes, edges, pushHistory, nextEdgeId, clearSelection } = action
+      const { nodes, edges, pushHistory, nextEdgeId, clearSelection, nextFlowDirection } = action
+      const computedFlowDirection = nextFlowDirection ?? inferFlowDirection(nodes, edges)
       const base = {
         ...state,
         nodes,
         edges,
+        flowDirection: computedFlowDirection,
         nextNodeId: getNextAvailableNodeId(nodes),
         nextEdgeId: nextEdgeId ?? state.nextEdgeId,
       }
@@ -759,7 +1007,10 @@ function reducer(state, action) {
         return base
       }
       const sliced = state.history.slice(0, state.historyIndex + 1)
-      const nextHistory = [...sliced, { nodes, edges }]
+      const nextHistory = [
+        ...sliced,
+        { nodes, edges, flowDirection: computedFlowDirection },
+      ]
       return {
         ...base,
         history: nextHistory,
@@ -775,6 +1026,7 @@ function reducer(state, action) {
         ...state,
         nodes: prev.nodes,
         edges: prev.edges,
+        flowDirection: prev.flowDirection ?? state.flowDirection,
         nextNodeId: getNextAvailableNodeId(prev.nodes),
         historyIndex: state.historyIndex - 1,
         selectedNodes: [],
@@ -789,6 +1041,7 @@ function reducer(state, action) {
         ...state,
         nodes: next.nodes,
         edges: next.edges,
+        flowDirection: next.flowDirection ?? state.flowDirection,
         nextNodeId: getNextAvailableNodeId(next.nodes),
         historyIndex: state.historyIndex + 1,
         selectedNodes: [],
@@ -848,48 +1101,70 @@ function ShapePreview({ shape }) {
 export default function MermaidEditor() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false)
+  const [edgeLabelEdit, setEdgeLabelEdit] = useState(null) // { edgeId, width }
   const svgRef = useRef(null)
   const canvasRef = useRef(null)
   const labelInputRef = useRef(null)
+  const edgeLabelInputRef = useRef(null)
+  const edgeLabelDraftRef = useRef("")
+  const edgeLabelCommitLockRef = useRef(false)
+  const lastLabelEditNodeIdRef = useRef(null)
+  const lastEdgeLabelEditIdRef = useRef(null)
   const pendingConnectRef = useRef(null) // { nodeId, startX, startY }
   const didInitialViewportSyncRef = useRef(false)
   const boxSelectRef = useRef(state.boxSelect)
   const selectedNodesRef = useRef(state.selectedNodes)
+  const skipNextCodeSyncRef = useRef(false)
+  const codeEditStartRef = useRef(null)
   const usageInstructions = useMemo(
     () => [
       {
-        lead: "Create nodes",
-        detail: "Drag a shape from the left panel onto the canvas.",
+        lead: "Create a node",
+        detail: "Drag a shape from the left panel and drop it on the canvas.",
       },
       {
-        lead: "Move nodes",
-        detail: "Drag anywhere inside a node body.",
+        lead: "Move one or many nodes",
+        detail: "Select nodes, then drag any selected node to move the full selection.",
       },
       {
         lead: "Connect nodes",
-        detail: "Hover a node, then drag from the highlighted text area.",
+        detail: "Hover a node, drag from its highlighted text area, and release on a target node.",
       },
       {
-        lead: "Rename quickly",
-        detail: "Double-click node text to enter edit mode.",
+        lead: "Edit node text",
+        detail: "Double-click node text to edit inline. Press Enter or click outside to apply.",
       },
       {
-        lead: "Select multiple",
+        lead: "Edit line labels",
+        detail: "Double-click a connection line to edit its label inline.",
+      },
+      {
+        lead: "Select multiple nodes",
         detail: "Drag on empty canvas to box-select; hold Shift to add more.",
       },
       {
         lead: "Pan the canvas",
-        detail: "Right-click and drag.",
+        detail: "Hold right-click and drag.",
       },
       {
-        lead: "Zoom and reset",
-        detail: "Scroll to zoom. Use Reset zoom to return to 100% and recenter.",
+        lead: "Zoom and center",
+        detail:
+          "Scroll to zoom. Use Reset zoom for 100% + top-centered view, or Center to recenter at current zoom.",
       },
       {
-        lead: "Delete items",
-        detail: "Use node/line delete buttons or press Delete for selected items.",
+        lead: "Delete and clear",
+        detail: "Use node/line delete buttons, press Delete for selected items, or use Clear All in the top bar.",
+      },
+      {
+        lead: "Code editor sync",
+        detail: "Edit Mermaid code on the right and click Apply to rebuild the diagram.",
       },
     ],
+    []
+  )
+  const quickUsageInstructions = useMemo(() => usageInstructions.slice(0, 6), [usageInstructions])
+  const getEdgeLabelBoxWidth = useCallback(
+    (text) => Math.max(26, String(text || "").length * 7 + 10),
     []
   )
 
@@ -898,8 +1173,6 @@ export default function MermaidEditor() {
   useEffect(() => {
     nodesRef.current = state.nodes
     edgesRef.current = state.edges
-    boxSelectRef.current = state.boxSelect
-    selectedNodesRef.current = state.selectedNodes
   }, [state.nodes, state.edges])
   useEffect(() => {
     boxSelectRef.current = state.boxSelect
@@ -907,24 +1180,29 @@ export default function MermaidEditor() {
   }, [state.boxSelect, state.selectedNodes])
 
   const selectedNodesSet = useMemo(() => new Set(state.selectedNodes), [state.selectedNodes])
-  const boxPreviewSelectedSet = useMemo(() => {
+  const boxPreviewSelectedSet = (() => {
     if (!state.boxSelect) return new Set()
     const r = rectFromPoints(state.boxSelect.start, state.boxSelect.current)
     return new Set(state.nodes.filter((n) => rectIntersects(r, n)).map((n) => n.id))
-  }, [state.boxSelect, state.nodes])
+  })()
 
   // ---- Keep code synced when not editing ----
   useEffect(() => {
     if (!state.codeEditMode) {
-      const code = generateMermaidCode(state.nodes, state.edges)
+      if (skipNextCodeSyncRef.current) {
+        skipNextCodeSyncRef.current = false
+        return
+      }
+      const code = generateMermaidCode(state.nodes, state.edges, state.flowDirection)
       if (code !== state.mermaidCode) dispatch({ type: "SET_MERMAID_CODE", code })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.nodes, state.edges, state.codeEditMode])
+  }, [state.nodes, state.edges, state.codeEditMode, state.flowDirection, state.mermaidCode])
 
   useEffect(() => {
     if (!state.labelEdit) return
+    if (lastLabelEditNodeIdRef.current === state.labelEdit.nodeId) return
     if (!labelInputRef.current) return
+    lastLabelEditNodeIdRef.current = state.labelEdit.nodeId
     const el = labelInputRef.current
     if (el.isContentEditable) {
       el.textContent = state.labelEdit.value || ""
@@ -941,7 +1219,92 @@ export default function MermaidEditor() {
     range.selectNodeContents(el)
     sel.removeAllRanges()
     sel.addRange(range)
-  }, [state.labelEdit?.nodeId])
+  }, [state.labelEdit])
+
+  useEffect(() => {
+    if (state.labelEdit) return
+    lastLabelEditNodeIdRef.current = null
+  }, [state.labelEdit])
+
+  useEffect(() => {
+    if (!edgeLabelEdit) return
+    if (lastEdgeLabelEditIdRef.current === edgeLabelEdit.edgeId) return
+    if (!edgeLabelInputRef.current) return
+    lastEdgeLabelEditIdRef.current = edgeLabelEdit.edgeId
+    const el = edgeLabelInputRef.current
+    if (el.isContentEditable) {
+      el.textContent = edgeLabelDraftRef.current || ""
+    }
+    el.focus()
+    const selection = window.getSelection?.()
+    if (!selection) return
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    range.collapse(false)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }, [edgeLabelEdit])
+
+  useEffect(() => {
+    if (edgeLabelEdit) return
+    lastEdgeLabelEditIdRef.current = null
+  }, [edgeLabelEdit])
+
+  const commitEdgeLabelEdit = useCallback(() => {
+    if (!edgeLabelEdit || edgeLabelCommitLockRef.current) return
+    edgeLabelCommitLockRef.current = true
+    const nextLabel = String(edgeLabelDraftRef.current ?? "").trim()
+    const currentEdge = state.edges.find((ed) => ed.id === edgeLabelEdit.edgeId)
+    if (!currentEdge) {
+      setEdgeLabelEdit(null)
+      window.setTimeout(() => {
+        edgeLabelCommitLockRef.current = false
+      }, 0)
+      return
+    }
+    if (nextLabel === String(currentEdge.label ?? "").trim()) {
+      dispatch({ type: "EDGE_SELECT", edgeId: edgeLabelEdit.edgeId })
+      setEdgeLabelEdit(null)
+      window.setTimeout(() => {
+        edgeLabelCommitLockRef.current = false
+      }, 0)
+      return
+    }
+    const edges = state.edges.map((ed) =>
+      ed.id === edgeLabelEdit.edgeId ? { ...ed, label: nextLabel } : ed
+    )
+    dispatch({
+      type: "APPLY_GRAPH",
+      nodes: state.nodes,
+      edges,
+      pushHistory: true,
+    })
+    dispatch({ type: "EDGE_SELECT", edgeId: edgeLabelEdit.edgeId })
+    setEdgeLabelEdit(null)
+    window.setTimeout(() => {
+      edgeLabelCommitLockRef.current = false
+    }, 0)
+  }, [edgeLabelEdit, state.nodes, state.edges])
+
+  const cancelEdgeLabelEdit = useCallback(() => {
+    edgeLabelCommitLockRef.current = false
+    setEdgeLabelEdit(null)
+  }, [])
+
+  useEffect(() => {
+    if (!edgeLabelEdit) return
+    const onPointerDownCapture = (e) => {
+      const editorEl = edgeLabelInputRef.current
+      if (!editorEl) return
+      const target = e.target
+      if (target && editorEl.contains(target)) return
+      commitEdgeLabelEdit()
+    }
+    window.addEventListener("pointerdown", onPointerDownCapture, true)
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDownCapture, true)
+    }
+  }, [edgeLabelEdit, commitEdgeLabelEdit])
 
   // ---- Keyboard shortcuts ----
   const deleteSelected = useCallback(() => {
@@ -1099,7 +1462,7 @@ export default function MermaidEditor() {
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onUp)
     }
-  }, [state.paletteDrag?.shape, clientToWorld, state.nextNodeId])
+  }, [state.paletteDrag, clientToWorld, state.nextNodeId])
 
   useEffect(() => {
     if (!state.boxSelect) return
@@ -1131,6 +1494,42 @@ export default function MermaidEditor() {
       window.removeEventListener("pointerup", onUp)
     }
   }, [state.boxSelect, clientToWorld])
+
+  useEffect(() => {
+    if (!state.dragging) return
+
+    const dragging = state.dragging
+    const zoom = state.zoom
+
+    const onMove = (e) => {
+      const dx = (e.clientX - dragging.startX) / zoom
+      const dy = (e.clientY - dragging.startY) / zoom
+      const newNodes = nodesRef.current.map((n) => {
+        const p = dragging.initialPositions?.[n.id]
+        if (!p) return n
+        const centerX = p.x + n.width / 2 + dx
+        const centerY = p.y + n.height / 2 + dy
+        return {
+          ...n,
+          x: snapToGrid(centerX) - n.width / 2,
+          y: snapToGrid(centerY) - n.height / 2,
+        }
+      })
+      dispatch({ type: "DRAG_MOVE", nodes: newNodes })
+    }
+
+    const onUp = () => {
+      dispatch({ type: "APPLY_GRAPH", nodes: nodesRef.current, edges: edgesRef.current, pushHistory: true })
+      dispatch({ type: "DRAG_END" })
+    }
+
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp, { once: true })
+    return () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+  }, [state.dragging, state.zoom])
 
   // ---- Node drag ----
   const startDragging = useCallback(
@@ -1224,23 +1623,7 @@ export default function MermaidEditor() {
         }
       }
 
-      if (state.dragging) {
-        const dx = (e.clientX - state.dragging.startX) / state.zoom
-        const dy = (e.clientY - state.dragging.startY) / state.zoom
-        const newNodes = state.nodes.map((n) => {
-          const p = state.dragging.initialPositions?.[n.id]
-          if (!p) return n
-          const centerX = p.x + n.width / 2 + dx
-          const centerY = p.y + n.height / 2 + dy
-          return {
-            ...n,
-            x: snapToGrid(centerX) - n.width / 2,
-            y: snapToGrid(centerY) - n.height / 2,
-          }
-        })
-        dispatch({ type: "DRAG_MOVE", nodes: newNodes })
-        return
-      }
+      if (state.dragging) return
 
       if (state.panning) {
         const dx = e.clientX - state.panning.startX
@@ -1273,7 +1656,7 @@ export default function MermaidEditor() {
         }
       }
     },
-    [state.dragging, state.nodes, state.zoom, state.panning, state.connecting, state.boxSelect, state.hoveredNode, clientToWorld]
+    [state.dragging, state.nodes, state.panning, state.connecting, state.boxSelect, state.hoveredNode, clientToWorld]
   )
 
   const handleCanvasWheel = useCallback(
@@ -1308,11 +1691,7 @@ export default function MermaidEditor() {
   const handlePointerUp = useCallback(
     (e) => {
       pendingConnectRef.current = null
-      if (state.dragging) {
-        dispatch({ type: "APPLY_GRAPH", nodes: nodesRef.current, edges: edgesRef.current, pushHistory: true })
-        dispatch({ type: "DRAG_END" })
-        return
-      }
+      if (state.dragging) return
 
       if (state.connecting) {
         let nodeId = e.target.getAttribute?.("data-node-id")
@@ -1361,13 +1740,18 @@ export default function MermaidEditor() {
 
   // ---- Code editing ----
   const handleCodeChange = useCallback((e) => {
+    if (!state.codeEditMode && codeEditStartRef.current == null) {
+      codeEditStartRef.current = state.mermaidCode
+    }
     dispatch({ type: "SET_MERMAID_CODE", code: e.target.value })
     dispatch({ type: "SET_CODE_EDIT_MODE", enabled: true })
-  }, [])
+  }, [state.codeEditMode, state.mermaidCode])
 
   const applyCodeChanges = useCallback(() => {
     const res = parseMermaidCode(state.mermaidCode)
     if (!res.ok) return
+    // Preserve pasted Mermaid text for this apply cycle.
+    skipNextCodeSyncRef.current = true
     dispatch({
       type: "APPLY_GRAPH",
       nodes: res.nodes,
@@ -1375,16 +1759,19 @@ export default function MermaidEditor() {
       pushHistory: true,
       nextNodeId: res.nextNodeId,
       nextEdgeId: res.nextEdgeId,
+      nextFlowDirection: res.flowDirection,
       clearSelection: true,
     })
     dispatch({ type: "SET_CODE_EDIT_MODE", enabled: false })
+    codeEditStartRef.current = null
   }, [state.mermaidCode])
 
   const cancelCodeChanges = useCallback(() => {
-    const code = generateMermaidCode(state.nodes, state.edges)
+    const code = codeEditStartRef.current ?? state.mermaidCode
     dispatch({ type: "SET_MERMAID_CODE", code })
     dispatch({ type: "SET_CODE_EDIT_MODE", enabled: false })
-  }, [state.nodes, state.edges])
+    codeEditStartRef.current = null
+  }, [state.mermaidCode])
 
   const copyCode = useCallback(async () => {
     try {
@@ -1530,7 +1917,7 @@ export default function MermaidEditor() {
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    const sizeMatch = svgString.match(/width=\"(\d+)\"\s+height=\"(\d+)\"/)
+    const sizeMatch = svgString.match(/width="(\d+)"\s+height="(\d+)"/)
     const baseW = sizeMatch ? Number(sizeMatch[1]) : 1200
     const baseH = sizeMatch ? Number(sizeMatch[2]) : 800
     const scale = 2
@@ -1660,7 +2047,6 @@ export default function MermaidEditor() {
   const canDelete = state.selectedNodes.length > 0 || !!state.selectedEdge
   const canClearAll = state.nodes.length > 0 || state.edges.length > 0
   const isZoomDefault = Math.abs(state.zoom - 1) < 0.001
-  const flowDirection = useMemo(() => inferFlowDirection(state.nodes, state.edges), [state.nodes, state.edges])
 
   // ---- Render ----
   return (
@@ -1934,16 +2320,19 @@ export default function MermaidEditor() {
               cursor: "pointer",
               border: "1px solid #dbeafe",
             }}
-            title="Click to open instructions"
+            title="Click to open full instructions"
           >
-            <strong style={{ color: "#334155", display: "block", marginBottom: "8px" }}>How to use (click to expand):</strong>
+            <strong style={{ color: "#334155", display: "block", marginBottom: "8px" }}>How to use (quick guide):</strong>
             <ol style={{ margin: 0, paddingLeft: "18px" }}>
-              {usageInstructions.map((instruction, index) => (
+              {quickUsageInstructions.map((instruction, index) => (
                 <li key={index} style={{ marginBottom: "2px" }}>
                   <strong>{instruction.lead}:</strong> <em>{instruction.detail}</em>
                 </li>
               ))}
             </ol>
+            <div style={{ marginTop: "8px", color: "#475569", fontWeight: 600 }}>
+              Click to open the full guide.
+            </div>
           </div>
         </div>
 
@@ -1980,17 +2369,34 @@ export default function MermaidEditor() {
             <g transform={`translate(${state.viewOffset.x}, ${state.viewOffset.y}) scale(${state.zoom})`}>
               {/* Edges (with arrow direction) */}
               {state.edges.map((edge) => {
-                const from = getNodeCenter(state.nodes, edge.from)
-                const to = getNodeCenter(state.nodes, edge.to)
+                const fromNode = state.nodes.find((n) => n.id === edge.from)
+                const toNode = state.nodes.find((n) => n.id === edge.to)
+                const fromCenter = getNodeCenter(state.nodes, edge.from)
+                const toCenter = getNodeCenter(state.nodes, edge.to)
+                const from = fromNode ? getNodeConnectionPoint(fromNode, toCenter, 2) : fromCenter
+                const to = toNode ? getNodeConnectionPoint(toNode, fromCenter, 6) : toCenter
                 const isSelected = state.selectedEdge === edge.id
                 const isHovered = state.hoveredEdge === edge.id
                 const showDelete = isSelected || isHovered
                 const lineStroke = isSelected ? "#0ea5e9" : isHovered ? "#38bdf8" : "#64748b"
                 const lineWidth = isSelected ? 3 : 2
-                const edgeMidX = (from.x + to.x) / 2
-                const edgeMidY = (from.y + to.y) / 2
-                const deleteX = edgeMidX
-                const deleteY = edgeMidY
+                const dx = to.x - from.x
+                const dy = to.y - from.y
+                const isEdgeLabelEditing = edgeLabelEdit?.edgeId === edge.id
+                const hasLabelOrEditing = Boolean(edge.label) || isEdgeLabelEditing
+                const distributeControlsEvenly = showDelete && hasLabelOrEditing
+                const labelT = distributeControlsEvenly ? 1 / 3 : 1 / 2
+                const deleteT = distributeControlsEvenly ? 2 / 3 : hasLabelOrEditing ? 0.68 : 0.5
+                const labelCenterX = from.x + dx * labelT
+                const labelCenterY = from.y + dy * labelT
+                const edgeEditorWidth = isEdgeLabelEditing
+                  ? edgeLabelEdit.width
+                  : getEdgeLabelBoxWidth(edge.label)
+                const edgeEditorHeight = 18
+                const edgeEditorX = labelCenterX - edgeEditorWidth / 2
+                const edgeEditorY = labelCenterY - edgeEditorHeight / 2
+                const deleteX = from.x + dx * deleteT
+                const deleteY = from.y + dy * deleteT
 
                 return (
                   <g
@@ -2002,9 +2408,9 @@ export default function MermaidEditor() {
                     <defs>
                       <marker
                         id={`arrowhead-${edge.id}`}
-                        markerWidth="10"
-                        markerHeight="10"
-                        refX="9"
+                        markerWidth="12"
+                        markerHeight="12"
+                        refX="10"
                         refY="3"
                         orient="auto"
                         markerUnits="strokeWidth"
@@ -2025,6 +2431,13 @@ export default function MermaidEditor() {
                         e.stopPropagation()
                         dispatch({ type: "EDGE_SELECT", edgeId: edge.id })
                       }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation()
+                        dispatch({ type: "EDGE_SELECT", edgeId: edge.id })
+                        const initialValue = edge.label || ""
+                        edgeLabelDraftRef.current = initialValue
+                        setEdgeLabelEdit({ edgeId: edge.id, width: getEdgeLabelBoxWidth(initialValue) })
+                      }}
                     />
                     <line
                       x1={from.x}
@@ -2039,18 +2452,84 @@ export default function MermaidEditor() {
                         transition: "stroke 140ms ease",
                       }}
                     />
-                    {edge.label && (
-                      <text
-                        x={edgeMidX}
-                        y={edgeMidY - 5}
-                        textAnchor="middle"
-                        fill="#334155"
-                        fontSize="12"
-                        fontWeight="500"
-                        style={{ pointerEvents: "none", userSelect: "none" }}
+                    {edge.label && !isEdgeLabelEditing && (
+                      <>
+                        <rect
+                          x={labelCenterX - Math.max(18, String(edge.label).length * 7 + 10) / 2}
+                          y={labelCenterY - edgeEditorHeight / 2}
+                          width={Math.max(18, String(edge.label).length * 7 + 10)}
+                          height={edgeEditorHeight}
+                          rx={4}
+                          fill="white"
+                          style={{ pointerEvents: "none" }}
+                        />
+                        <text
+                          x={labelCenterX}
+                          y={labelCenterY}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fill="#334155"
+                          fontSize="12"
+                          fontWeight="500"
+                          style={{ pointerEvents: "none", userSelect: "none" }}
+                        >
+                          {edge.label}
+                        </text>
+                      </>
+                    )}
+                    {isEdgeLabelEditing && (
+                      <foreignObject
+                        x={edgeEditorX}
+                        y={edgeEditorY}
+                        width={edgeEditorWidth}
+                        height={edgeEditorHeight}
                       >
-                        {edge.label}
-                      </text>
+                        <div
+                          ref={edgeLabelInputRef}
+                          contentEditable
+                          suppressContentEditableWarning={true}
+                          onInput={(e) => {
+                            const text = e.currentTarget.textContent || ""
+                            edgeLabelDraftRef.current = text
+                            const nextWidth = getEdgeLabelBoxWidth(text)
+                            setEdgeLabelEdit((prev) =>
+                              prev && prev.edgeId === edge.id && prev.width !== nextWidth
+                                ? { ...prev, width: nextWidth }
+                                : prev
+                            )
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onBlur={commitEdgeLabelEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault()
+                              commitEdgeLabelEdit()
+                              return
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault()
+                              cancelEdgeLabelEdit()
+                            }
+                          }}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            boxSizing: "border-box",
+                            border: "1px solid #7dd3fc",
+                            borderRadius: "4px",
+                            background: "white",
+                            color: "#334155",
+                            fontSize: "12px",
+                            fontWeight: 500,
+                            lineHeight: "14px",
+                            padding: "0 5px",
+                            outline: "none",
+                            textAlign: "center",
+                            overflow: "hidden",
+                            whiteSpace: "nowrap",
+                          }}
+                        />
+                      </foreignObject>
                     )}
                     {showDelete && (
                       <g
@@ -2681,7 +3160,7 @@ export default function MermaidEditor() {
                 marginBottom: "14px",
               }}
             >
-              <h2 style={{ margin: 0, fontSize: "28px", color: "#0f172a", lineHeight: 1.15 }}>
+              <h2 style={{ margin: 0, fontSize: "26px", color: "#0f172a", lineHeight: 1.15 }}>
                 How to use
               </h2>
               <button
@@ -2700,20 +3179,19 @@ export default function MermaidEditor() {
                 }}
                 aria-label="Close instructions"
               >
-                <span aria-hidden="true" style={{ fontSize: "22px", lineHeight: 1, fontWeight: 700 }}>
-                  ×
-                </span>
+                <X size={20} />
               </button>
             </div>
-            <p style={{ margin: "0 0 14px 0", color: "#475569", fontSize: "15px", lineHeight: 1.6 }}>
-              Quick guide to creating and editing flowcharts.
+            <p style={{ margin: "0 0 14px 0", color: "#475569", fontSize: "14px", lineHeight: 1.6 }}>
+              Full guide for canvas interactions, editing, and Mermaid code sync.
             </p>
             <ol
               style={{
                 margin: 0,
-                paddingLeft: "22px",
+                paddingLeft: 0,
+                listStylePosition: "inside",
                 color: "#1e293b",
-                fontSize: "18px",
+                fontSize: "17px",
                 lineHeight: 1.55,
                 display: "grid",
                 gap: "10px",
@@ -2723,6 +3201,7 @@ export default function MermaidEditor() {
                 <li
                   key={index}
                   style={{
+                    listStylePosition: "inside",
                     padding: "10px 12px",
                     border: "1px solid #e2e8f0",
                     borderRadius: "10px",
@@ -2743,7 +3222,7 @@ export default function MermaidEditor() {
                 border: "1px solid #e2e8f0",
                 background: "#f8fafc",
                 color: "#475569",
-                fontSize: "14px",
+                fontSize: "13px",
               }}
             >
               Tip: press <kbd style={{ padding: "1px 6px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "white" }}>Esc</kbd> to close this modal.
@@ -2754,3 +3233,4 @@ export default function MermaidEditor() {
     </div>
   )
 }
+
