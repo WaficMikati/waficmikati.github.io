@@ -38,18 +38,189 @@ const RESET_ZOOM_TOP_PADDING = 80
 const NODE_CONTENT_INSET = 10
 
 const NODE_SHAPES = {
-  rounded: { label: "Start/End", mermaid: "()" },
-  rectangle: { label: "Process", mermaid: "[]" },
-  diamond: { label: "Decision", mermaid: "{}" },
-  circle: { label: "Connector", mermaid: "(())" },
-  stadium: { label: "Stadium", mermaid: "([])" },
+  rounded: { mermaid: "()" },
+  rectangle: { mermaid: "[]" },
+  diamond: { mermaid: "{}" },
+  circle: { mermaid: "(())" },
+  stadium: { mermaid: "([])" },
+}
+const SHAPE_LABELS = {
+  en: {
+    rounded: "Start/End",
+    rectangle: "Process",
+    diamond: "Decision",
+    circle: "Connector",
+    stadium: "Stadium",
+  },
+  es: {
+    rounded: "Inicio/Fin",
+    rectangle: "Proceso",
+    diamond: "Decision",
+    circle: "Conector",
+    stadium: "Estadio",
+  },
 }
 const NODE_BASE_LABELS = {
-  rectangle: "Process",
-  rounded: "Start",
-  diamond: "Decision",
-  circle: "Connector",
-  stadium: "Stadium",
+  en: {
+    rectangle: "Process",
+    rounded: "Start",
+    diamond: "Decision",
+    circle: "Connector",
+    stadium: "Stadium",
+  },
+  es: {
+    rectangle: "Proceso",
+    rounded: "Inicio",
+    diamond: "Decision",
+    circle: "Conector",
+    stadium: "Estadio",
+  },
+}
+const UI_STRINGS = {
+  en: {
+    toolbarTitle: "Mermaid Flowchart Editor",
+    clearAll: "Clear All",
+    resetZoom: "Reset zoom",
+    center: "Center",
+    exportPng: "Export PNG",
+    hideCode: "Hide Code",
+    showCode: "Show Code",
+    dragShapes: "Drag Shapes",
+    dragShapeTitle: "Click and drag onto the canvas",
+    openInstructionsTitle: "Click to open full instructions",
+    quickGuideTitle: "How to use (quick guide):",
+    openFullGuide: "Click to open the full guide.",
+    mermaidCode: "Mermaid Code",
+    apply: "Apply",
+    cancel: "Cancel",
+    copied: "Copied!",
+    copy: "Copy",
+    syntaxSubset: "Mermaid Syntax (subset):",
+    nodes: "Nodes",
+    edges: "Edges",
+    newNode: "New Node",
+    howToUse: "How to use",
+    closeInstructions: "Close instructions",
+    fullGuideDescription: "Full guide for canvas interactions, editing, and Mermaid code sync.",
+    tipPrefix: "Tip: press",
+    tipSuffix: "to close this modal.",
+    language: "Language",
+  },
+  es: {
+    toolbarTitle: "Editor de Diagramas Mermaid",
+    clearAll: "Borrar todo",
+    resetZoom: "Restablecer zoom",
+    center: "Centrar",
+    exportPng: "Exportar PNG",
+    hideCode: "Ocultar codigo",
+    showCode: "Mostrar codigo",
+    dragShapes: "Arrastrar formas",
+    dragShapeTitle: "Haz clic y arrastra al lienzo",
+    openInstructionsTitle: "Haz clic para abrir las instrucciones completas",
+    quickGuideTitle: "Como usar (guia rapida):",
+    openFullGuide: "Haz clic para abrir la guia completa.",
+    mermaidCode: "Codigo Mermaid",
+    apply: "Aplicar",
+    cancel: "Cancelar",
+    copied: "Copiado!",
+    copy: "Copiar",
+    syntaxSubset: "Sintaxis Mermaid (subconjunto):",
+    nodes: "Nodos",
+    edges: "Conexiones",
+    newNode: "Nodo nuevo",
+    howToUse: "Como usar",
+    closeInstructions: "Cerrar instrucciones",
+    fullGuideDescription: "Guia completa para interacciones del lienzo, edicion y sincronizacion de codigo Mermaid.",
+    tipPrefix: "Consejo: presiona",
+    tipSuffix: "para cerrar este modal.",
+    language: "Idioma",
+  },
+}
+const USAGE_INSTRUCTIONS = {
+  en: [
+    {
+      lead: "Create a node",
+      detail: "Drag a shape from the left panel and drop it on the canvas.",
+    },
+    {
+      lead: "Move one or many nodes",
+      detail: "Select nodes, then drag any selected node to move the full selection.",
+    },
+    {
+      lead: "Connect nodes",
+      detail: "Hover a node, drag from its highlighted text area, and release on a target node.",
+    },
+    {
+      lead: "Edit node text",
+      detail: "Double-click node text to edit inline. Press Enter or click outside to apply.",
+    },
+    {
+      lead: "Edit line labels",
+      detail: "Double-click a connection line to edit its label inline.",
+    },
+    {
+      lead: "Select multiple nodes",
+      detail: "Drag on empty canvas to box-select; hold Shift to add more.",
+    },
+    {
+      lead: "Pan the canvas",
+      detail: "Hold right-click and drag.",
+    },
+    {
+      lead: "Zoom and center",
+      detail: "Scroll to zoom. Use Reset zoom for 100% + top-centered view, or Center to recenter at current zoom.",
+    },
+    {
+      lead: "Delete and clear",
+      detail: "Use node/line delete buttons, press Delete for selected items, or use Clear All in the top bar.",
+    },
+    {
+      lead: "Code editor sync",
+      detail: "Edit Mermaid code on the right and click Apply to rebuild the diagram.",
+    },
+  ],
+  es: [
+    {
+      lead: "Crear un nodo",
+      detail: "Arrastra una forma desde el panel izquierdo y sueltala en el lienzo.",
+    },
+    {
+      lead: "Mover uno o varios nodos",
+      detail: "Selecciona nodos y luego arrastra cualquier nodo seleccionado para mover todo el grupo.",
+    },
+    {
+      lead: "Conectar nodos",
+      detail: "Pasa el cursor sobre un nodo, arrastra desde su area de texto resaltada y suelta sobre un nodo destino.",
+    },
+    {
+      lead: "Editar texto de nodo",
+      detail: "Haz doble clic en el texto del nodo para editar en linea. Presiona Enter o haz clic fuera para aplicar.",
+    },
+    {
+      lead: "Editar etiquetas de linea",
+      detail: "Haz doble clic en una linea de conexion para editar su etiqueta en linea.",
+    },
+    {
+      lead: "Seleccionar varios nodos",
+      detail: "Arrastra en un area vacia para seleccionar; manten Shift para agregar mas.",
+    },
+    {
+      lead: "Mover el lienzo",
+      detail: "Manten clic derecho y arrastra.",
+    },
+    {
+      lead: "Zoom y centrar",
+      detail: "Desplaza para hacer zoom. Usa Restablecer zoom para 100% + vista centrada arriba, o Centrar para centrar al zoom actual.",
+    },
+    {
+      lead: "Borrar y limpiar",
+      detail: "Usa los botones de borrar de nodos/lineas, presiona Delete para elementos seleccionados o usa Borrar todo.",
+    },
+    {
+      lead: "Sincronizacion de codigo",
+      detail: "Edita el codigo Mermaid a la derecha y haz clic en Aplicar para reconstruir el diagrama.",
+    },
+  ],
 }
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
@@ -295,8 +466,8 @@ const getNodeSizeForLabel = (label, shape) => {
     height: Math.max(base.height, snapToGrid(desiredHeight)),
   }
 }
-const getAutoNodeLabel = (shape, nodes) => {
-  const base = NODE_BASE_LABELS[shape] || "Node"
+const getAutoNodeLabel = (shape, nodes, baseLabels = NODE_BASE_LABELS.en) => {
+  const base = baseLabels[shape] || "Node"
   const countForShape = nodes.filter((n) => n.shape === shape).length + 1
   return countForShape === 1 ? base : `${base} ${countForShape}`
 }
@@ -1116,57 +1287,34 @@ export default function MermaidEditor() {
   const selectedNodesRef = useRef(state.selectedNodes)
   const skipNextCodeSyncRef = useRef(false)
   const codeEditStartRef = useRef(null)
+  const [language, setLanguage] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("mermaid-editor-language")
+      return saved === "es" ? "es" : "en"
+    } catch {
+      return "en"
+    }
+  })
+  const texts = UI_STRINGS[language] || UI_STRINGS.en
+  const shapeLabels = SHAPE_LABELS[language] || SHAPE_LABELS.en
+  const nodeBaseLabels = NODE_BASE_LABELS[language] || NODE_BASE_LABELS.en
   const usageInstructions = useMemo(
-    () => [
-      {
-        lead: "Create a node",
-        detail: "Drag a shape from the left panel and drop it on the canvas.",
-      },
-      {
-        lead: "Move one or many nodes",
-        detail: "Select nodes, then drag any selected node to move the full selection.",
-      },
-      {
-        lead: "Connect nodes",
-        detail: "Hover a node, drag from its highlighted text area, and release on a target node.",
-      },
-      {
-        lead: "Edit node text",
-        detail: "Double-click node text to edit inline. Press Enter or click outside to apply.",
-      },
-      {
-        lead: "Edit line labels",
-        detail: "Double-click a connection line to edit its label inline.",
-      },
-      {
-        lead: "Select multiple nodes",
-        detail: "Drag on empty canvas to box-select; hold Shift to add more.",
-      },
-      {
-        lead: "Pan the canvas",
-        detail: "Hold right-click and drag.",
-      },
-      {
-        lead: "Zoom and center",
-        detail:
-          "Scroll to zoom. Use Reset zoom for 100% + top-centered view, or Center to recenter at current zoom.",
-      },
-      {
-        lead: "Delete and clear",
-        detail: "Use node/line delete buttons, press Delete for selected items, or use Clear All in the top bar.",
-      },
-      {
-        lead: "Code editor sync",
-        detail: "Edit Mermaid code on the right and click Apply to rebuild the diagram.",
-      },
-    ],
-    []
+    () => USAGE_INSTRUCTIONS[language] || USAGE_INSTRUCTIONS.en,
+    [language]
   )
   const quickUsageInstructions = useMemo(() => usageInstructions.slice(0, 6), [usageInstructions])
   const getEdgeLabelBoxWidth = useCallback(
     (text) => Math.max(26, String(text || "").length * 7 + 10),
     []
   )
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("mermaid-editor-language", language)
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+  }, [language])
 
   const nodesRef = useRef(state.nodes)
   const edgesRef = useRef(state.edges)
@@ -1439,7 +1587,7 @@ export default function MermaidEditor() {
       const world = clientToWorld(e.clientX, e.clientY)
       const id = String(state.nextNodeId)
       const { width, height } = getShapeSize(dragShape)
-      const label = getAutoNodeLabel(dragShape, nodesRef.current)
+      const label = getAutoNodeLabel(dragShape, nodesRef.current, nodeBaseLabels)
       const snappedCenterX = snapToGrid(world.x)
       const snappedCenterY = snapToGrid(world.y)
       const newNode = {
@@ -1462,7 +1610,7 @@ export default function MermaidEditor() {
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onUp)
     }
-  }, [state.paletteDrag, clientToWorld, state.nextNodeId])
+  }, [state.paletteDrag, clientToWorld, state.nextNodeId, nodeBaseLabels])
 
   useEffect(() => {
     if (!state.boxSelect) return
@@ -2085,8 +2233,29 @@ export default function MermaidEditor() {
             letterSpacing: "-0.5px",
           }}
         >
-          Mermaid Flowchart Editor
+          {texts.toolbarTitle}
         </h1>
+
+        <div style={{ display: "flex", alignItems: "center", marginRight: "6px" }}>
+          <button
+            onClick={() => setLanguage((prev) => (prev === "en" ? "es" : "en"))}
+            title={`${texts.language}: ${language.toUpperCase()}`}
+            aria-label={`${texts.language}: ${language.toUpperCase()}`}
+            style={{
+              padding: "5px 10px",
+              background: "#0ea5e9",
+              color: "white",
+              border: "1px solid #e2e8f0",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "12px",
+              fontWeight: 700,
+              lineHeight: 1,
+            }}
+          >
+            {language.toUpperCase()}
+          </button>
+        </div>
 
         <div style={{ width: "1px", height: "24px", background: "#e2e8f0", margin: "0 4px" }} />
 
@@ -2145,9 +2314,9 @@ export default function MermaidEditor() {
           disabled={!canClearAll}
           style={{
             padding: "8px 12px",
-            background: "white",
-            color: !canClearAll ? "#cbd5e1" : "#64748b",
-            border: "1px solid #e2e8f0",
+            background: !canClearAll ? "#f8fafc" : "#0ea5e9",
+            color: !canClearAll ? "#cbd5e1" : "white",
+            border: !canClearAll ? "1px solid #e2e8f0" : "none",
             borderRadius: "6px",
             cursor: !canClearAll ? "not-allowed" : "pointer",
             display: "flex",
@@ -2158,7 +2327,7 @@ export default function MermaidEditor() {
           }}
         >
           <Trash2 size={16} />
-          Clear All
+          {texts.clearAll}
         </button>
 
         <div style={{ width: "1px", height: "24px", background: "#e2e8f0", margin: "0 4px" }} />
@@ -2184,15 +2353,15 @@ export default function MermaidEditor() {
             fontWeight: "500",
           }}
         >
-          Reset zoom
+          {texts.resetZoom}
         </button>
         <button
           onClick={centerDiagram}
           style={{
             padding: "8px 12px",
-            background: "white",
-            color: "#64748b",
-            border: "1px solid #e2e8f0",
+            background: "#0ea5e9",
+            color: "white",
+            border: "none",
             borderRadius: "6px",
             cursor: "pointer",
             display: "flex",
@@ -2201,7 +2370,7 @@ export default function MermaidEditor() {
             fontWeight: "500",
           }}
         >
-          Center
+          {texts.center}
         </button>
 
         <div style={{ width: "1px", height: "24px", background: "#e2e8f0", margin: "0 4px" }} />
@@ -2223,7 +2392,7 @@ export default function MermaidEditor() {
           }}
         >
           <Download size={16} />
-          Export PNG
+          {texts.exportPng}
         </button>
 
         <button
@@ -2243,7 +2412,7 @@ export default function MermaidEditor() {
           }}
         >
           <Code size={16} />
-          {state.codePanelVisible ? "Hide Code" : "Show Code"}
+          {state.codePanelVisible ? texts.hideCode : texts.showCode}
         </button>
       </div>
 
@@ -2270,11 +2439,11 @@ export default function MermaidEditor() {
               letterSpacing: "0.5px",
             }}
           >
-            Drag Shapes
+            {texts.dragShapes}
           </h3>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px" }}>
-            {Object.entries(NODE_SHAPES).map(([key, { label }]) => (
+            {Object.entries(NODE_SHAPES).map(([key]) => (
               <div
                 key={key}
                 onPointerDown={(e) => onPalettePointerDown(e, key)}
@@ -2289,12 +2458,14 @@ export default function MermaidEditor() {
                   cursor: "grab",
                   userSelect: "none",
                 }}
-                title="Click and drag onto the canvas"
+                title={texts.dragShapeTitle}
               >
                 <div style={{ width: 48, display: "flex", justifyContent: "center" }}>
                   <ShapePreview shape={key} />
                 </div>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>{label}</div>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>
+                  {shapeLabels[key] || SHAPE_LABELS.en[key]}
+                </div>
               </div>
             ))}
           </div>
@@ -2320,9 +2491,9 @@ export default function MermaidEditor() {
               cursor: "pointer",
               border: "1px solid #dbeafe",
             }}
-            title="Click to open full instructions"
+            title={texts.openInstructionsTitle}
           >
-            <strong style={{ color: "#334155", display: "block", marginBottom: "8px" }}>How to use (quick guide):</strong>
+            <strong style={{ color: "#334155", display: "block", marginBottom: "8px" }}>{texts.quickGuideTitle}</strong>
             <ol style={{ margin: 0, paddingLeft: "18px" }}>
               {quickUsageInstructions.map((instruction, index) => (
                 <li key={index} style={{ marginBottom: "2px" }}>
@@ -2331,7 +2502,7 @@ export default function MermaidEditor() {
               ))}
             </ol>
             <div style={{ marginTop: "8px", color: "#475569", fontWeight: 600 }}>
-              Click to open the full guide.
+              {texts.openFullGuide}
             </div>
           </div>
         </div>
@@ -2928,7 +3099,7 @@ export default function MermaidEditor() {
             >
               <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <Code size={20} />
-                Mermaid Code
+                {texts.mermaidCode}
               </span>
 
               <div style={{ display: "flex", gap: "8px" }}>
@@ -2951,7 +3122,7 @@ export default function MermaidEditor() {
                       }}
                     >
                       <Check size={14} />
-                      Apply
+                      {texts.apply}
                     </button>
                     <button
                       onClick={cancelCodeChanges}
@@ -2970,7 +3141,7 @@ export default function MermaidEditor() {
                       }}
                     >
                       <X size={14} />
-                      Cancel
+                      {texts.cancel}
                     </button>
                   </>
                 )}
@@ -2994,12 +3165,12 @@ export default function MermaidEditor() {
                   {state.copySuccess ? (
                     <>
                       <Check size={14} />
-                      Copied!
+                      {texts.copied}
                     </>
                   ) : (
                     <>
                       <Copy size={14} />
-                      Copy
+                      {texts.copy}
                     </>
                   )}
                 </button>
@@ -3034,10 +3205,10 @@ export default function MermaidEditor() {
                 lineHeight: "1.5",
               }}
             >
-              <strong style={{ color: "#334155", display: "block", marginBottom: "8px" }}>Mermaid Syntax (subset):</strong>
-              Nodes: <code>ID[Label]</code>, <code>ID(Label)</code>, <code>ID{"{"}Label{"}"}</code>, <code>ID((Label))</code>, <code>ID([Label])</code>
+              <strong style={{ color: "#334155", display: "block", marginBottom: "8px" }}>{texts.syntaxSubset}</strong>
+              {texts.nodes}: <code>ID[Label]</code>, <code>ID(Label)</code>, <code>ID{"{"}Label{"}"}</code>, <code>ID((Label))</code>, <code>ID([Label])</code>
               <br />
-              Edges: <code>A --&gt; B</code>, <code>A --&gt;|label| B</code>
+              {texts.edges}: <code>A --&gt; B</code>, <code>A --&gt;|label| B</code>
             </div>
           </div>
         )}
@@ -3118,7 +3289,7 @@ export default function MermaidEditor() {
                   fontWeight="500"
                   style={{ userSelect: "none" }}
                 >
-                  New Node
+                  {texts.newNode}
                 </text>
               </svg>
             </div>
@@ -3161,7 +3332,7 @@ export default function MermaidEditor() {
               }}
             >
               <h2 style={{ margin: 0, fontSize: "26px", color: "#0f172a", lineHeight: 1.15 }}>
-                How to use
+                {texts.howToUse}
               </h2>
               <button
                 onClick={() => setIsInstructionsOpen(false)}
@@ -3177,13 +3348,13 @@ export default function MermaidEditor() {
                   alignItems: "center",
                   justifyContent: "center",
                 }}
-                aria-label="Close instructions"
+                aria-label={texts.closeInstructions}
               >
                 <X size={20} />
               </button>
             </div>
             <p style={{ margin: "0 0 14px 0", color: "#475569", fontSize: "14px", lineHeight: 1.6 }}>
-              Full guide for canvas interactions, editing, and Mermaid code sync.
+              {texts.fullGuideDescription}
             </p>
             <ol
               style={{
@@ -3225,7 +3396,11 @@ export default function MermaidEditor() {
                 fontSize: "13px",
               }}
             >
-              Tip: press <kbd style={{ padding: "1px 6px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "white" }}>Esc</kbd> to close this modal.
+              {texts.tipPrefix}{" "}
+              <kbd style={{ padding: "1px 6px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "white" }}>
+                Esc
+              </kbd>{" "}
+              {texts.tipSuffix}
             </div>
           </div>
         </div>
