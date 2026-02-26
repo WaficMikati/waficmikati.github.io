@@ -1,28 +1,49 @@
-# Wafic Mikati Website + Mermaid Flowchart Editor
+<div align="center">
 
-A minimal personal GitHub Pages site with a dedicated, interactive Mermaid flowchart editor.
+# Mermaid Flowchart Editor
 
-- Home page: `/`
-- Mermaid Editor: `/mermaid/`
+Visual flowchart builder with real-time Mermaid code synchronization.
 
-[Live Site](https://waficmikati.github.io/) | [Open Editor](https://waficmikati.github.io/mermaid/)
+<p>
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" />
+  <img alt="Vite 7" src="https://img.shields.io/badge/Vite-7-7C3AED?logo=vite&logoColor=white" />
+  <img alt="Node" src="https://img.shields.io/badge/Node-20%2B-339933?logo=node.js&logoColor=white" />
+</p>
 
-## Highlights
+</div>
 
-- Visual flowchart building with drag-and-drop nodes.
-- Inline node text editing and inline edge label editing.
-- Multi-select + group move.
-- Connect nodes with directional arrows and editable labels.
-- Dynamic flow direction inference from diagram layout.
-- Mermaid code panel with apply/cancel/copy workflow.
-- EN/ES language toggle (persisted in local storage).
-- Scroll-to-zoom, right-click pan, reset zoom, and top-centered recentering.
-- Undo/redo history.
-- Export diagram as PNG.
+## Overview
+
+This app lets you build flowcharts visually on a grid canvas while keeping Mermaid code editable and synchronized.
+
+It supports drag-and-drop creation, inline editing, connection labeling, multi-selection, code apply/cancel flows, and PNG export.
+
+## Visual Architecture
+
+```mermaid
+flowchart LR
+    U[User Actions] --> C[Canvas Interactions]
+    U --> P[Code Panel]
+    C --> S[Graph State]
+    P --> S
+    S --> G[Generated Mermaid Code]
+    S --> E[Export PNG]
+```
+
+## Core Capabilities
+
+| Area | Capabilities |
+|---|---|
+| Node authoring | Drag-and-drop shapes, auto labels, adaptive sizing |
+| Edge authoring | Drag-to-connect, directional arrows, inline edge labels |
+| Editing | Inline node text edit, outside-click apply, Enter apply, Escape cancel |
+| Selection | Box select, multi-select, group drag, delete selected |
+| Navigation | Scroll zoom, right-click pan, reset zoom, center |
+| Mermaid sync | Apply code to rebuild graph, generate code from graph state |
+| Localization | EN/ES language toggle with persistence |
+| Output | PNG export |
 
 ## Supported Mermaid Syntax (Current Subset)
-
-This editor supports a practical subset of Mermaid flowchart syntax, including:
 
 - Node declarations:
   - `A[Process]`
@@ -36,89 +57,66 @@ This editor supports a practical subset of Mermaid flowchart syntax, including:
 - Flow direction:
   - `flowchart TD`, `LR`, `RL`, `BT`
 
-The parser and generator are designed for round-trip editing with the visual canvas and code panel.
+Example:
 
-## Tech Stack
+```mermaid
+flowchart TD
+    A[Christmas] -->|Get money| B(Go shopping)
+    B --> C{Let me think}
+    C -->|One| D[Laptop]
+    C -->|Two| E[iPhone]
+    C -->|Three| F[fa:fa-car Car]
+```
 
-- React 19
-- Vite 7
-- Lucide React icons
-- Plain inline styling in `App.jsx`
+## Quick Start
 
-## Local Development
-
-### 1. Install
+### Install dependencies
 
 ```bash
 npm install
 ```
 
-### 2. Run dev server
+### Start development server
 
 ```bash
 npm run dev
 ```
 
-Default Vite URL:
-
-- `http://localhost:5173/` (home)
-- `http://localhost:5173/mermaid/` (editor)
-
-### 3. Production build
+### Build for production
 
 ```bash
 npm run build
 ```
 
-### 4. Preview production build
+### Preview production build
 
 ```bash
 npm run preview
 ```
 
-## GitHub Pages Deployment
+## Scripts
 
-This repo is configured to deploy using GitHub Actions.
-
-Workflow:
-
-- [.github/workflows/pages.yml](./.github/workflows/pages.yml)
-
-Build script used for Pages:
-
-```bash
-npm run build:pages
-```
-
-This outputs the static site to `site/`, which is uploaded and deployed by the workflow.
-
-Important Pages setting:
-
-- In repository settings, set **Pages Source** to **GitHub Actions** (not branch/Jekyll mode).
+| Command | Description |
+|---|---|
+| `npm run dev` | Start local dev server |
+| `npm run build` | Build production assets to `dist/` |
+| `npm run build:pages` | Build static output to `site/` |
+| `npm run preview` | Preview production build locally |
+| `npm run lint` | Run ESLint |
 
 ## Project Structure
 
 ```text
 .
-|-- index.html                    # Home page
-|-- mermaid/index.html            # Mermaid editor entry page
+|-- mermaid/index.html            # Editor page entry
 |-- src/
 |   |-- App.jsx                   # Main editor implementation
 |   `-- main.jsx                  # React bootstrap
-|-- .github/workflows/pages.yml   # GitHub Pages deployment workflow
-|-- vite.config.js                # Multi-page Vite config (home + /mermaid)
+|-- vite.config.js                # Vite multi-page config
 `-- package.json
 ```
 
-## Scripts
-
-- `npm run dev` - Start local dev server.
-- `npm run build` - Build production assets to `dist/`.
-- `npm run build:pages` - Build Pages output to `site/` with relative base paths.
-- `npm run preview` - Preview production build locally.
-- `npm run lint` - Run ESLint.
-
 ## Notes
 
-- The editor is implemented as a single React component (`src/App.jsx`) by design, optimized for rapid iteration.
-- UI language defaults to English and can be toggled to Spanish in the top toolbar.
+- Main editor logic is intentionally centralized in `src/App.jsx` for fast iteration.
+- Language preference is stored in `localStorage`.
