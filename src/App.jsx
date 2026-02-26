@@ -2242,15 +2242,17 @@ export default function MermaidEditor() {
             title={`${texts.language}: ${language.toUpperCase()}`}
             aria-label={`${texts.language}: ${language.toUpperCase()}`}
             style={{
-              padding: "5px 10px",
+              padding: "8px 12px",
               background: "#0ea5e9",
               color: "white",
               border: "1px solid #e2e8f0",
               borderRadius: "6px",
               cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: 700,
+              fontSize: "14px",
+              fontWeight: "500",
               lineHeight: 1,
+              display: "flex",
+              alignItems: "center",
             }}
           >
             {language.toUpperCase()}
