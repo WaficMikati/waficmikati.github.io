@@ -506,15 +506,20 @@ function inferFlowDirection(nodes, edges) {
 function generateMermaidCode(nodes, edges, directionOverride) {
   const direction = directionOverride || inferFlowDirection(nodes, edges)
   let code = `flowchart ${direction}\n`
-  const escapeQuotedLabel = (value) =>
+  // Mermaid reads #name; and #123; as character codes and &name; as HTML, so text
+  // that already looks like one is escaped first. A "<" before a letter would be
+  // read as an HTML tag.
+  const escapeLabelText = (value) =>
     String(value ?? "")
-      .replace(/\\/g, "\\\\")
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, "<br/>")
+      .replace(/#(?=\w+;)/g, "#35;")
+      .replace(/&(?=#?\w+;)/g, "#amp;")
+      .replace(/"/g, "#quot;")
+      .replace(/<(?=[A-Za-z/!?])/g, "#lt;")
+  const escapeQuotedLabel = (value) => escapeLabelText(value).replace(/\n/g, "<br/>")
   const escapeEdgeLabel = (value) =>
-    String(value ?? "")
+    escapeLabelText(value)
       .replace(/\n/g, " ")
-      .replace(/\|/g, "&#124;")
+      .replace(/\|/g, "#124;")
   const shapeText = {
     rectangle: (label) => `["${label}"]`,
     rounded: (label) => `("${label}")`,
@@ -536,7 +541,7 @@ function generateMermaidCode(nodes, edges, directionOverride) {
     const toNode = nodeById.get(edge.to)
     const fromToken = fromNode ? nodeToken(fromNode) : edge.from
     const toToken = toNode ? nodeToken(toNode) : edge.to
-    const arrow = edge.label ? `-->|${escapeEdgeLabel(edge.label)}|` : "-->"
+    const arrow = edge.label ? `-->|"${escapeEdgeLabel(edge.label)}"|` : "-->"
     code += `    ${fromToken} ${arrow} ${toToken}\n`
   }
 
@@ -589,6 +594,10 @@ function parseMermaidCode(code) {
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&amp;/g, "&")
+        .replace(/#(\d+|quot|apos|lt|gt|amp);/g, (_, code) =>
+          ({ quot: "\"", apos: "'", lt: "<", gt: ">", amp: "&" })[code] ??
+          String.fromCharCode(Number(code)),
+        )
     const unquoteLabel = (value) => {
       const raw = String(value ?? "").trim()
       if (
@@ -717,9 +726,14 @@ function parseMermaidCode(code) {
     // Edges first
     for (const lineInfo of lines) {
       const line = lineInfo.trimmed
-      const m = line.match(/^(.+?)\s*-->\s*(?:\|([^|]+)\|\s*)?(.+?)\s*$/)
+      // Match on a copy with quoted text blanked out, so an arrow inside a label
+      // is not read as the edge.
+      const masked = line.replace(/"[^"]*"/g, (quoted) => "_".repeat(quoted.length))
+      const m = masked.match(/^(.+?)\s*-->\s*(?:\|([^|]+)\|\s*)?(.+?)\s*$/d)
       if (!m) continue
-      const [, fromToken, label = "", toToken] = m
+      const [fromToken, label, toToken] = [1, 2, 3].map((i) =>
+        m.indices[i] ? line.slice(...m.indices[i]) : "",
+      )
       const from = upsertNodeFromToken(fromToken)
       const to = upsertNodeFromToken(toToken)
       if (!from || !to) continue
@@ -728,7 +742,7 @@ function parseMermaidCode(code) {
         id: `e${maxEdgeId}`,
         from,
         to,
-        label: decodeMermaidLabel(label.trim()),
+        label: decodeMermaidLabel(unquoteLabel(label)),
         type: "arrow",
       })
       addNodeIfMissing(from)
